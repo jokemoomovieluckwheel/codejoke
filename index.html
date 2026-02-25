@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CORE JOKEMOO</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" type="image" href="logo.png">
+    <script src="api-config.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎰 ระบบจัดการโค้ดสุ่มวงล้อ</h1>
+            <p>สร้างและจัดการโค้ดสำหรับหมุนวงล้อรางวัล · โค้ดที่สร้างที่นี่ใช้ได้ที่หน้าวงล้อแม้คนละโคม/คนละเครื่อง</p>
+        </div>
+
+        <div class="stats-section">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="number" id="totalCodes">0</div>
+                    <div class="label">โค้ดทั้งหมด</div>
+                </div>
+                <div class="stat-card">
+                    <div class="number" id="activeCodes">0</div>
+                    <div class="label">โค้ดที่ยังใช้ได้</div>
+                </div>
+                <div class="stat-card">
+                    <div class="number" id="totalSpins">0</div>
+                    <div class="label">สิทธิ์หมุนคงเหลือ</div>
+                </div>
+                <div class="stat-card">
+                    <div class="number" id="totalWins">0</div>
+                    <div class="label">รางวัลที่ได้</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="icon">✨</div>
+                <h2>สร้างโค้ดใหม่</h2>
+            </div>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>ความยาวโค้ด</label>
+                    <select id="codeLength">
+                        <option value="4">4 ตัวอักษร</option>
+                        <option value="6" selected>6 ตัวอักษร</option>
+                        <option value="8">8 ตัวอักษร</option>
+                        <option value="10">10 ตัวอักษร</option>
+                        <option value="12">12 ตัวอักษร</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>จำนวนสิทธิ์การสุ่ม</label>
+                    <input type="number" id="spinCount" value="1" min="1" max="100" placeholder="1-100">
+                </div>
+                <div class="form-group">
+                    <label>จำนวนโค้ดที่สร้าง</label>
+                    <input type="number" id="codeCount" value="1" min="1" max="50" placeholder="1-50">
+                </div>
+                <div class="form-group">
+                    <label>อายุโค้ด (วัน)</label>
+                    <input type="number" id="expiryDays" value="7" min="1" max="365" placeholder="7" title="หมดอายุหลังกี่วัน">
+                </div>
+            </div>
+            <button class="btn btn-primary" onclick="generateCodes()">
+                <span>🎲</span> สร้างโค้ด
+            </button>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="icon">📋</div>
+                <h2>รายการโค้ดทั้งหมด</h2>
+                <div class="header-actions">
+                    <button class="btn-sm btn-delete-selected" id="btnDeleteSelected" onclick="deleteSelectedCodes()">
+                        🗑️ ลบที่เลือก (<span id="selectedCount">0</span>)
+                    </button>
+                    <button class="btn-sm btn-delete-all" onclick="deleteAllCodes()">🗑️ ลบทั้งหมด</button>
+                    <button class="btn-sm btn-refresh" onclick="refreshData()">🔄 รีเฟรช</button>
+                </div>
+            </div>
+            <div id="selectAllRow" class="select-all-row" style="display: none;">
+                <input type="checkbox" id="selectAll" class="code-checkbox" onchange="toggleSelectAll()">
+                <label for="selectAll">เลือกทั้งหมด</label>
+            </div>
+            <div class="code-grid" id="codeList"></div>
+        </div>
+
+        <div class="card trash-section" id="trashSection" style="display: none;">
+            <div class="card-header">
+                <div class="icon">🗑️</div>
+                <div>
+                    <h2>ถังขยะ</h2>
+                    <p class="trash-desc">โค้ดหมดอายุหรือที่ลบจะมาอยู่ที่นี่ กู้คืนได้ 1 ครั้งต่อโค้ด · ครบ 1 วันจะถูกลบถาวร</p>
+                </div>
+            </div>
+            <div class="trash-grid" id="trashList"></div>
+        </div>
+    </div>
+
+    <div class="modal" id="historyModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>📊 รายละเอียดโค้ด</h3>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-code">
+                <div class="code" id="modalCode"></div>
+            </div>
+            <div class="modal-stats">
+                <div class="modal-stat">
+                    <div class="value" id="modalSpinsUsed">0</div>
+                    <div class="label">ใช้ไปแล้ว</div>
+                </div>
+                <div class="modal-stat">
+                    <div class="value" id="modalSpinsLeft">0</div>
+                    <div class="label">คงเหลือ</div>
+                </div>
+            </div>
+            <h4 style="margin-bottom: 12px; color: rgba(255,255,255,0.7); font-size: 15px;">🎁 ประวัติการสุ่ม</h4>
+            <div class="modal-history" id="modalHistory"></div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <div class="confirm-modal" id="confirmModal">
+        <div class="confirm-content">
+            <div class="confirm-icon" id="confirmIcon">⚠️</div>
+            <div class="confirm-title" id="confirmTitle">ยืนยันการดำเนินการ</div>
+            <div class="confirm-message" id="confirmMessage">คุณต้องการดำเนินการนี้หรือไม่?</div>
+            <div class="confirm-buttons">
+                <button class="confirm-btn confirm-btn-cancel" id="confirmCancel">ยกเลิก</button>
+                <button class="confirm-btn confirm-btn-ok" id="confirmOk">ยืนยัน</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
