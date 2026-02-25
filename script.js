@@ -5,6 +5,8 @@ const STORAGE_KEY = 'wheel_codes';
         let selectedCodes = new Set();
         var codesCache = [];
         var trashCache = [];
+        var lastApiLoadTime = 0;
+        var API_CACHE_MS = 400;
 
         function apiBase() {
             return (typeof window.WHEEL_API_BASE === 'string' && window.WHEEL_API_BASE.trim()) ? window.WHEEL_API_BASE.trim() : '';
@@ -13,17 +15,37 @@ const STORAGE_KEY = 'wheel_codes';
             var q = Object.keys(params).map(function(k) { return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]); }).join('&');
             return fetch(apiBase() + '?' + q).then(function(r) { return r.json(); });
         }
-        function loadFromApi() {
+        function setListLoading(loading) {
+            var el = document.getElementById('codeList');
+            if (!el) return;
+            if (loading) {
+                el.setAttribute('data-loading', '1');
+                el.innerHTML = '<div class="empty-state loading-state"><div class="icon">⏳</div><p>กำลังโหลด...</p></div>';
+            } else {
+                el.removeAttribute('data-loading');
+            }
+        }
+        function loadFromApi(force) {
             if (!apiBase()) return Promise.resolve();
+            if (!force && (Date.now() - lastApiLoadTime) < API_CACHE_MS) {
+                renderCodeList();
+                renderTrashList();
+                updateStats();
+                return Promise.resolve();
+            }
+            setListLoading(true);
             return apiGet({ action: 'list' }).then(function(res) {
                 codesCache = res.codes || [];
                 trashCache = res.trash || [];
+                lastApiLoadTime = Date.now();
+                setListLoading(false);
                 renderCodeList();
                 renderTrashList();
                 updateStats();
             }).catch(function() {
                 codesCache = [];
                 trashCache = [];
+                setListLoading(false);
                 renderCodeList();
                 renderTrashList();
                 updateStats();
@@ -173,14 +195,30 @@ const STORAGE_KEY = 'wheel_codes';
 
         function restoreFromTrash(code) {
             if (apiBase()) {
+                var trash = getTrash();
+                var item = trash.find(function(t) { return t.code === code; });
                 apiGet({ action: 'restore', code: code }).then(function(res) {
-                    if (res.ok) {
-                        loadFromApi();
+                    if (res.ok && item) {
+                        trashCache = trashCache.filter(function(t) { return t.code !== code; });
+                        var exp = new Date();
+                        exp.setDate(exp.getDate() + 7);
+                        codesCache.push({
+                            code: item.code,
+                            spins: item.spins,
+                            maxSpins: item.maxSpins,
+                            history: item.history || [],
+                            createdAt: item.createdAt,
+                            expiresAt: exp.toISOString(),
+                            restoredOnce: true
+                        });
+                        renderCodeList();
+                        renderTrashList();
+                        updateStats();
                         showToast('✅ กู้คืนโค้ด ' + code + ' แล้ว');
-                    } else {
+                    } else if (!res.ok) {
                         showToast(res.error === 'already_restored' ? 'โค้ดนี้กู้คืนได้เพียง 1 ครั้ง' : 'กู้คืนไม่สำเร็จ', 'error');
                     }
-                }).catch(function() { showToast('เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ', 'error'); });
+                }).catch(function() { showToast('เชื่อมต่อ API ไม่ได้: เปิดจาก https:// และใน Apps Script ตั้ง Deploy = Anyone', 'error'); });
                 return;
             }
             var trash = getTrash();
@@ -213,9 +251,10 @@ const STORAGE_KEY = 'wheel_codes';
         function deleteFromTrash(code) {
             if (apiBase()) {
                 apiGet({ action: 'deletetrash', code: code }).then(function() {
-                    loadFromApi();
+                    trashCache = trashCache.filter(function(t) { return t.code !== code; });
+                    renderTrashList();
                     showToast('🗑️ ลบออกจากถังขยะแล้ว');
-                }).catch(function() { showToast('เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ', 'error'); });
+                }).catch(function() { showToast('เชื่อมต่อ API ไม่ได้: เปิดจาก https:// และใน Apps Script ตั้ง Deploy = Anyone', 'error'); });
                 return;
             }
             var trash = getTrash().filter(function(t) { return t.code !== code; });
@@ -246,13 +285,15 @@ const STORAGE_KEY = 'wheel_codes';
 
             if (apiBase()) {
                 apiGet({ action: 'create', spins: spins, count: count, length: length, expiryDays: expiryDays }).then(function(res) {
-                    var created = (res.created || []).map(function(c) { return c.code; });
+                    var created = res.created || [];
                     if (created.length > 0) {
-                        loadFromApi();
-                        var textToCopy = created.join('\n');
+                        created.forEach(function(c) { codesCache.push(c); });
+                        renderCodeList();
+                        updateStats();
+                        var textToCopy = created.map(function(c) { return c.code; }).join('\n');
                         navigator.clipboard.writeText(textToCopy).then(function() {
                             showToast(created.length === 1
-                                ? '✅ สร้างโค้ดสำเร็จ และคัดลอกแล้ว: ' + created[0]
+                                ? '✅ สร้างโค้ดสำเร็จ และคัดลอกแล้ว: ' + created[0].code
                                 : '✅ สร้างโค้ดสำเร็จ ' + created.length + ' รายการ และคัดลอกแล้ว');
                         }).catch(function() {
                             showToast('✅ สร้างโค้ดสำเร็จ ' + created.length + ' รายการ');
@@ -260,7 +301,7 @@ const STORAGE_KEY = 'wheel_codes';
                     } else {
                         showToast('ไม่สามารถสร้างโค้ดใหม่ได้ (อาจซ้ำกับที่มีอยู่)', 'error');
                     }
-                }).catch(function() { showToast('เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ', 'error'); });
+                }).catch(function() { showToast('เชื่อมต่อ API ไม่ได้: เปิดจาก https:// และใน Apps Script ตั้ง Deploy = Anyone', 'error'); });
                 return;
             }
 
@@ -320,15 +361,23 @@ const STORAGE_KEY = 'wheel_codes';
             ).then(function(confirmed) {
                 if (!confirmed) return;
                 if (apiBase()) {
+                    var codes = getCodes();
+                    var item = codes.find(function(c) { return c.code === code; });
                     apiGet({ action: 'delete', code: code }).then(function(res) {
-                        if (res.ok) {
+                        if (res.ok && item) {
                             selectedCodes.delete(code);
-                            loadFromApi();
+                            codesCache = codesCache.filter(function(c) { return c.code !== code; });
+                            item.movedToTrashAt = new Date().toISOString();
+                            item.restoredOnce = item.restoredOnce || false;
+                            trashCache.push(item);
+                            renderCodeList();
+                            renderTrashList();
+                            updateStats();
                             showToast('🗑️ ย้ายโค้ดไปถังขยะแล้ว');
-                        } else {
+                        } else if (!res.ok) {
                             showToast('ลบไม่สำเร็จ', 'error');
                         }
-                    }).catch(function() { showToast('เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ', 'error'); });
+                    }).catch(function() { showToast('เชื่อมต่อ API ไม่ได้: เปิดจาก https:// และใน Apps Script ตั้ง Deploy = Anyone', 'error'); });
                     return;
                 }
                 var codes = getCodes();
@@ -369,20 +418,29 @@ const STORAGE_KEY = 'wheel_codes';
             ).then(function(confirmed) {
                 if (!confirmed) return;
                 if (apiBase()) {
-                    var done = 0;
-                    function next() {
-                        if (done >= codes.length) {
-                            selectedCodes.clear();
-                            loadFromApi();
-                            showToast('🗑️ ย้ายโค้ดทั้งหมดไปถังขยะแล้ว');
-                            return;
-                        }
-                        apiGet({ action: 'delete', code: codes[done].code }).then(function() {
-                            done++;
-                            next();
-                        }).catch(function() { done++; next(); });
-                    }
-                    next();
+                    var tr = getTrash();
+                    codes.forEach(function(c) {
+                        tr.push({
+                            code: c.code,
+                            spins: c.spins,
+                            maxSpins: c.maxSpins,
+                            history: c.history || [],
+                            createdAt: c.createdAt,
+                            expiresAt: c.expiresAt,
+                            movedToTrashAt: new Date().toISOString(),
+                            restoredOnce: c.restoredOnce || false
+                        });
+                    });
+                    codesCache = [];
+                    trashCache = tr;
+                    selectedCodes.clear();
+                    renderCodeList();
+                    renderTrashList();
+                    updateStats();
+                    showToast('🗑️ ย้ายโค้ดทั้งหมดไปถังขยะแล้ว');
+                    codes.forEach(function(c) {
+                        apiGet({ action: 'delete', code: c.code }).catch(function() {});
+                    });
                     return;
                 }
                 var trash = getTrash();
@@ -421,20 +479,31 @@ const STORAGE_KEY = 'wheel_codes';
             ).then(function(confirmed) {
                 if (!confirmed) return;
                 if (apiBase()) {
-                    var done = 0;
-                    function next() {
-                        if (done >= toDelete.length) {
-                            selectedCodes.clear();
-                            loadFromApi();
-                            showToast('🗑️ ย้ายโค้ดที่เลือกไปถังขยะแล้ว');
-                            return;
-                        }
-                        apiGet({ action: 'delete', code: toDelete[done] }).then(function() {
-                            done++;
-                            next();
-                        }).catch(function() { done++; next(); });
-                    }
-                    next();
+                    var codes = getCodes();
+                    var tr = getTrash();
+                    var toMove = codes.filter(function(c) { return selectedCodes.has(c.code); });
+                    toMove.forEach(function(c) {
+                        tr.push({
+                            code: c.code,
+                            spins: c.spins,
+                            maxSpins: c.maxSpins,
+                            history: c.history || [],
+                            createdAt: c.createdAt,
+                            expiresAt: c.expiresAt,
+                            movedToTrashAt: new Date().toISOString(),
+                            restoredOnce: c.restoredOnce || false
+                        });
+                    });
+                    codesCache = codes.filter(function(c) { return !selectedCodes.has(c.code); });
+                    trashCache = tr;
+                    selectedCodes.clear();
+                    renderCodeList();
+                    renderTrashList();
+                    updateStats();
+                    showToast('🗑️ ย้ายโค้ดที่เลือกไปถังขยะแล้ว');
+                    toMove.forEach(function(c) {
+                        apiGet({ action: 'delete', code: c.code }).catch(function() {});
+                    });
                     return;
                 }
                 var codes = getCodes();
@@ -570,41 +639,43 @@ const STORAGE_KEY = 'wheel_codes';
 
         function getCountdownString(expiresAt) {
             if (!expiresAt) return 'ไม่มีกำหนด';
-            const now = new Date().getTime();
-            const exp = new Date(expiresAt).getTime();
-            let ms = exp - now;
+            var now = new Date().getTime();
+            var exp = new Date(expiresAt).getTime();
+            var ms = exp - now;
             if (ms <= 0) return 'หมดอายุ';
-            const seconds = Math.floor((ms / 1000) % 60);
-            const minutes = Math.floor((ms / (1000 * 60)) % 60);
-            const hours = Math.floor((ms / (1000 * 60 * 60)) % 24);
-            const days = Math.floor(ms / (1000 * 60 * 60 * 24));
-            const parts = [];
+            var seconds = Math.floor((ms / 1000) % 60);
+            var minutes = Math.floor((ms / (1000 * 60)) % 60);
+            var hours = Math.floor((ms / (1000 * 60 * 60)) % 24);
+            var days = Math.floor(ms / (1000 * 60 * 60 * 24));
+            var parts = [];
             if (days > 0) parts.push(days + ' วัน');
             parts.push(hours + ' ชม.');
             parts.push(minutes + ' นาที');
-            parts.push(seconds + ' วินาที');
+            if (ms < 5 * 60 * 1000) parts.push(seconds + ' วินาที');
             return 'เหลืออีก ' + parts.join(' ');
         }
 
         function updateAllCountdowns() {
-            const elements = document.querySelectorAll('.countdown-text[data-expires]');
-            let anyExpired = false;
-            elements.forEach(el => {
-                const expiresAt = el.getAttribute('data-expires');
-                if (!expiresAt) return;
-                const now = new Date().getTime();
-                const exp = new Date(expiresAt).getTime();
+            if (document.visibilityState === 'hidden') return;
+            var elements = document.querySelectorAll('.countdown-text[data-expires]');
+            var anyExpired = false;
+            var now = new Date().getTime();
+            for (var i = 0; i < elements.length; i++) {
+                var el = elements[i];
+                var expiresAt = el.getAttribute('data-expires');
+                if (!expiresAt) continue;
+                var exp = new Date(expiresAt).getTime();
                 if (exp <= now) {
                     anyExpired = true;
                     el.textContent = 'หมดอายุ';
                     el.classList.add('expired');
-                    return;
+                    continue;
                 }
                 el.textContent = getCountdownString(expiresAt);
                 el.classList.remove('expired');
                 if ((exp - now) < 24 * 60 * 60 * 1000) el.classList.add('soon');
                 else el.classList.remove('soon');
-            });
+            }
             if (anyExpired) {
                 moveExpiredToTrash();
                 renderCodeList();
@@ -735,20 +806,29 @@ const STORAGE_KEY = 'wheel_codes';
         }
 
         function updateTrashCountdowns() {
-            const elements = document.querySelectorAll('.trash-countdown[data-moved]');
-            let anyExpired = false;
-            elements.forEach(el => {
-                const movedAt = el.getAttribute('data-moved');
-                if (!movedAt) return;
-                const left = getTrashTimeLeft(movedAt);
+            if (document.visibilityState === 'hidden') return;
+            var elements = document.querySelectorAll('.trash-countdown[data-moved]');
+            var anyExpired = false;
+            for (var i = 0; i < elements.length; i++) {
+                var el = elements[i];
+                var movedAt = el.getAttribute('data-moved');
+                if (!movedAt) continue;
+                var left = getTrashTimeLeft(movedAt);
                 el.textContent = '⏱ ' + left.text;
                 el.className = 'trash-countdown ' + (left.class || '');
                 if (left.ms <= 0) anyExpired = true;
-            });
+            }
             if (anyExpired) {
                 purgeExpiredTrash();
                 renderTrashList();
             }
+        }
+
+        function tickCountdowns() {
+            requestAnimationFrame(function() {
+                updateAllCountdowns();
+                updateTrashCountdowns();
+            });
         }
 
         function updateStats() {
@@ -776,7 +856,7 @@ const STORAGE_KEY = 'wheel_codes';
         function refreshData() {
             selectedCodes.clear();
             if (apiBase()) {
-                apiGet({ action: 'purgetrash' }).then(function() { return loadFromApi(); }).then(function() { showToast('🔄 รีเฟรชข้อมูลแล้ว'); });
+                apiGet({ action: 'purgetrash' }).then(function() { return loadFromApi(true); }).then(function() { showToast('🔄 รีเฟรชข้อมูลแล้ว'); });
                 return;
             }
             renderCodeList();
@@ -800,10 +880,11 @@ const STORAGE_KEY = 'wheel_codes';
             renderCodeList();
             updateStats();
         }
-        setInterval(function() {
-            updateAllCountdowns();
-            updateTrashCountdowns();
-        }, 1000);
+        var countdownInterval = 5000;
+        setInterval(tickCountdowns, countdownInterval);
+        document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState === 'visible') tickCountdowns();
+        });
 
         if (typeof window.LINK_WHEEL === 'string' && window.LINK_WHEEL) {
             var el = document.getElementById('linkToWheel');
