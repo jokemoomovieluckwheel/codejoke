@@ -4,7 +4,8 @@
  */
 (function () {
     'use strict';
-    window.WHEEL_API_BASE = 'https://jokemoomovieluckwheel.github.io/jokemooluckwheelnew1.0/';
+    window.WHEEL_API_BASE = 'https://jokemoomovieluckwheel.github.io/codejoke/';
     // ลิงก์ไปหน้าวงล้อ (ถ้าโฮสต์คนละโดเมน ใส่ URL เต็ม เช่น https://example.com/วงล้อ/)
-    window.LINK_WHEEL = 'https://jokemoomovieluckwheel.github.io/jokemooluckwheelnew1.0/';
+    window.LINK_WHEEL = 'https://jokemoomovieluckwheel.github.io/wheelnew/';
 })();
+
