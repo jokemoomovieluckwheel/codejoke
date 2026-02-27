@@ -9,6 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="style.css">
     <link rel="icon" type="image" href="logo.png">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="api-config.js"></script>
 </head>
 <body>
@@ -43,6 +44,7 @@
             <div class="card-header">
                 <div class="icon">✨</div>
                 <h2>สร้างโค้ดใหม่</h2>
+                <button class="btn-sm btn-dashboard" onclick="openDashboard()" title="ดู Dashboard">📊 Dashboard</button>
             </div>
             <div class="form-grid">
                 <div class="form-group">
@@ -85,6 +87,10 @@
                     <button class="btn-sm btn-refresh" onclick="refreshData()">🔄 รีเฟรช</button>
                 </div>
             </div>
+            <div class="search-box-wrapper">
+                <input type="text" id="searchInput" class="search-box" placeholder="🔍 ค้นหาโค้ด...">
+                <span class="search-count" id="searchCount"></span>
+            </div>
             <div id="selectAllRow" class="select-all-row" style="display: none;">
                 <input type="checkbox" id="selectAll" class="code-checkbox" onchange="toggleSelectAll()">
                 <label for="selectAll">เลือกทั้งหมด</label>
@@ -125,6 +131,62 @@
             </div>
             <h4 style="margin-bottom: 12px; color: rgba(255,255,255,0.7); font-size: 15px;">🎁 ประวัติการสุ่ม</h4>
             <div class="modal-history" id="modalHistory"></div>
+
+            <div class="modal-footer">
+                <div>สร้าง: <span id="modalCreated">-</span></div>
+                <div>หมดอายุ: <span id="modalExpires">-</span></div>
+                <div>ใช้ล่าสุด: <span id="modalLastUsed">-</span></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="dashboardModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>📊 Dashboard</h3>
+                <button class="modal-close" onclick="closeDashboard()">&times;</button>
+            </div>
+            <div class="dashboard-date-selector">
+                <div class="date-range-buttons">
+                    <button class="date-btn active" onclick="selectDashboardDate('today')" data-date="today">วันนี้</button>
+                    <button class="date-btn" onclick="selectDashboardDate('7days')" data-date="7days">7 วัน</button>
+                    <button class="date-btn" onclick="selectDashboardDate('30days')" data-date="30days">30 วัน</button>
+                </div>
+                <input type="date" id="customDate" class="custom-date-input" onchange="selectDashboardDate('custom')">
+            </div>
+            <div class="dashboard-content horizontal-layout">
+                <div class="dashboard-main-right">
+                    <div class="dashboard-summary">
+                        <div class="summary-card">
+                            <div class="summary-label">รางวัลทั้งหมด</div>
+                            <div class="summary-value" id="dashTotalWins">0</div>
+                        </div>
+                        <div class="summary-card">
+                            <div class="summary-label">จำนวนครั้งสุ่ม</div>
+                            <div class="summary-value" id="dashTotalSpins">0</div>
+                        </div>
+                        <div class="summary-card">
+                            <div class="summary-label">อัตราสำเร็จ</div>
+                            <div class="summary-value" id="dashSuccessRate">0%</div>
+                        </div>
+                    </div>
+                    <div class="dashboard-chart-container">
+                        <h4>📈 รางวัลที่ได้</h4>
+                        <div class="charts-grid">
+                            <div class="chart-box">
+                                <canvas id="dashboardChart" style="max-width: 100%;"></canvas>
+                            </div>
+                            <div class="chart-box">
+                                <canvas id="dashboardPieChart" style="max-width: 100%;"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="dashboard-history-list">
+                    <h4>📋 รายละเอียดรางวัล</h4>
+                    <div class="history-items" id="dashboardHistoryItems"></div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -143,5 +205,23 @@
     </div>
 
     <script src="script.js"></script>
+    <script>
+        // debounce helper to reduce redraws while typing
+        function debounce(fn, delay) {
+            let timer;
+            return function() {
+                const args = arguments;
+                clearTimeout(timer);
+                timer = setTimeout(() => fn.apply(this, args), delay);
+            };
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const searchInput = document.getElementById('searchInput');
+            if (searchInput) {
+                searchInput.addEventListener('input', debounce(filterCodes, 150), { passive: true });
+            }
+        });
+    </script>
 </body>
 </html>
